@@ -1,0 +1,81 @@
+AreaID,AreaType,LocalMusselDensity_m2,NeighboringMusselDensity_9pim2
+A1,mussels,216,NA
+A10,mussels,76,NA
+A2,mussels,200,NA
+A3,mussels,104,NA
+A4,mussels,100,NA
+A5,mussels,304,NA
+A6,mussels,200,NA
+A7,mussels,168,NA
+A8,mussels,100,NA
+A9,mussels,68,NA
+C1,mussels,84,NA
+C10,mussels,100,NA
+C2,mussels,260,NA
+C3,mussels,172,NA
+C4,mussels,144,NA
+C5,mussels,172,NA
+C6,mussels,124,NA
+C7,mussels,120,NA
+C8,mussels,84,NA
+C9,mussels,68,NA
+L1,mussels,128,NA
+L10,mussels,60,NA
+L2,mussels,24,NA
+L3,mussels,0,NA
+L4,mussels,28,NA
+L5,mussels,56,NA
+L6,mussels,28,NA
+L7,mussels,20,NA
+L8,mussels,8,NA
+L9,mussels,48,NA
+N1,mussels,96,NA
+N10,mussels,172,NA
+N2,mussels,152,NA
+N3,mussels,136,NA
+N4,mussels,228,NA
+N5,mussels,160,NA
+N6,mussels,128,NA
+N7,mussels,248,NA
+N8,mussels,272,NA
+N9,mussels,192,NA
+OA1,cordgrass only,NA,329
+OA10,cordgrass only,NA,45
+OA2,cordgrass only,NA,261
+OA3,cordgrass only,NA,217
+OA4,cordgrass only,NA,43
+OA5,cordgrass only,NA,396
+OA6,cordgrass only,NA,296
+OA7,cordgrass only,NA,252
+OA8,cordgrass only,NA,120
+OA9,cordgrass only,NA,153
+OC1,cordgrass only,NA,262
+OC10,cordgrass only,NA,338
+OC2,cordgrass only,NA,282
+OC3,cordgrass only,NA,453
+OC4,cordgrass only,NA,238
+OC5,cordgrass only,NA,414
+OC6,cordgrass only,NA,364
+OC7,cordgrass only,NA,69
+OC8,cordgrass only,NA,122
+OC9,cordgrass only,NA,288
+OL1,cordgrass only,NA,154
+OL10,cordgrass only,NA,52
+OL2,cordgrass only,NA,7
+OL3,cordgrass only,NA,0
+OL4,cordgrass only,NA,177
+OL5,cordgrass only,NA,30
+OL6,cordgrass only,NA,187
+OL7,cordgrass only,NA,146
+OL8,cordgrass only,NA,88
+OL9,cordgrass only,NA,51
+ON1,cordgrass only,NA,326
+ON10,cordgrass only,NA,247
+ON2,cordgrass only,NA,347
+ON3,cordgrass only,NA,201
+ON4,cordgrass only,NA,683
+ON5,cordgrass only,NA,198
+ON6,cordgrass only,NA,352
+ON7,cordgrass only,NA,411
+ON8,cordgrass only,NA,210
+ON9,cordgrass only,NA,286

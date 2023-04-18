@@ -1,0 +1,41 @@
+﻿AreaID,AreaType,PercWtTN,PercWtTOC
+OA10,cordgrass only,0.88,40.21
+OA2,cordgrass only,1.27,38.62
+OA4,cordgrass only,1.13,36.28
+OA5,cordgrass only,1.23,40.85
+OA9,cordgrass only,0.95,38.41
+OC1,cordgrass only,1.03,42.13
+OC2,cordgrass only,1.03,40.8
+OC3,cordgrass only,1.41,39.13
+OC4,cordgrass only,0.87,38.85
+OC7,cordgrass only,1.54,38.72
+OL1,cordgrass only,0.99,40.56
+OL8,cordgrass only,1.22,37.71
+ON1,cordgrass only,0.96,40.68
+ON4,cordgrass only,1.17,41.21
+ON6,cordgrass only,1.12,40.41
+OA6,cordgrass only,1.67,40.97
+OC9,cordgrass only,1.06,38.93
+OL3,cordgrass only,1.12,40.54
+OL5,cordgrass only,1.03,39.98
+ON10,cordgrass only,1.12,38.92
+A10,mussels,1.02,41.57
+A2,mussels,0.9,40.7
+A4,mussels,1.23,42.01
+A5,mussels,1.04,40.6
+A9,mussels,0.85,39.68
+C1,mussels,0.82,40.98
+C2,mussels,0.86,38.81
+C3,mussels,1.11,40.09
+C4,mussels,1.02,41.57
+C7,mussels,0.97,40.24
+L1,mussels,0.83,39.43
+L3,mussels,0.98,39.97
+L8,mussels,1,40.25
+N1,mussels,0.89,41.19
+N4,mussels,1,41.23
+N6,mussels,1.05,41.4
+A6,mussels,0.99,40.61
+C9,mussels,1.03,41.46
+L5,mussels,1.06,40.53
+N10,mussels,0.9,41.6

@@ -1,0 +1,81 @@
+AreaID,AreaType,AbovegroundBiomass_dry_g,BelowgroundBiomass_dry_g
+A1,mussels,6.421,3.434
+A10,mussels,9.647,6.302
+A2,mussels,10.548,6.233
+A3,mussels,9.033,8.552
+A4,mussels,6.952,5.486
+A5,mussels,7.515,4.789
+A6,mussels,9.635,4.009
+A7,mussels,5.135,5.575
+A8,mussels,7.607,5.223
+A9,mussels,5.49,5.787
+C1,mussels,18.468,4.401
+C10,mussels,15.574,11.505
+C2,mussels,30.766,11.798
+C3,mussels,9.007,9.586
+C4,mussels,15.683,7.719
+C5,mussels,11.623,6.336
+C6,mussels,8.583,12.427
+C7,mussels,32.689,13.758
+C8,mussels,14.703,8.545
+C9,mussels,8.76,5.11
+L1,mussels,10.878,4.318
+L10,mussels,11.128,NA
+L2,mussels,5.196,2.784
+L3,mussels,2.62,1.763
+L4,mussels,5.946,5.031
+L5,mussels,4.079,2.437
+L6,mussels,4.575,1.485
+L7,mussels,2.544,1.529
+L8,mussels,6.865,3.533
+L9,mussels,11.482,3.073
+N1,mussels,24.547,11.439
+N10,mussels,18.324,8.425
+N2,mussels,27.644,12.765
+N3,mussels,2.702,4.07
+N4,mussels,8.011,9.337
+N5,mussels,5.541,5.357
+N6,mussels,5.728,5.265
+N7,mussels,13.706,6.951
+N8,mussels,12.131,3.795
+N9,mussels,19.306,12.517
+OA1,cordgrass only,2.192,2.756
+OA10,cordgrass only,5.716,3.833
+OA2,cordgrass only,3.261,4.405
+OA3,cordgrass only,1.643,3.02
+OA4,cordgrass only,2.374,2.844
+OA5,cordgrass only,1.089,1.883
+OA6,cordgrass only,1.582,2.47
+OA7,cordgrass only,3.058,2.356
+OA8,cordgrass only,1.68,3.806
+OA9,cordgrass only,2.59,3.936
+OC1,cordgrass only,14.872,3.336
+OC10,cordgrass only,2.411,1.755
+OC2,cordgrass only,7.726,3.026
+OC3,cordgrass only,1.968,1.845
+OC4,cordgrass only,1.038,2.368
+OC5,cordgrass only,3.072,1.865
+OC6,cordgrass only,1.733,0.746
+OC7,cordgrass only,3.593,1.616
+OC8,cordgrass only,4.229,3.39
+OC9,cordgrass only,3.053,0.89
+OL1,cordgrass only,4.63,NA
+OL10,cordgrass only,3.179,1.445
+OL2,cordgrass only,0.976,1.393
+OL3,cordgrass only,2.537,0.675
+OL4,cordgrass only,2.524,1.316
+OL5,cordgrass only,3.405,2.213
+OL6,cordgrass only,5.448,2.272
+OL7,cordgrass only,5.383,2.137
+OL8,cordgrass only,2.61,1.848
+OL9,cordgrass only,1.438,1.488
+ON1,cordgrass only,11.248,3.879
+ON10,cordgrass only,2.252,2.151
+ON2,cordgrass only,6.272,1.25
+ON3,cordgrass only,2.26,3.711
+ON4,cordgrass only,3.695,1.823
+ON5,cordgrass only,2.551,1.829
+ON6,cordgrass only,2.249,2.196
+ON7,cordgrass only,1.719,0.883
+ON8,cordgrass only,2.365,1.724
+ON9,cordgrass only,3.683,4.606
