@@ -16,12 +16,12 @@ authors:
   - given-names: Jamie
     family-names: Rogers
     email: jamie.rogers@jonesctr.org
-    affiliation: University of Florida
-    orcid: 'https://orcid.org/0000-0002-9176-1838'
+    affiliation: Auburn University
   - given-names: Hallie
     family-names: Fischman
     email: halliefischman@ufl.edu
-    affiliation: Auburn University
+    affiliation: University of Florida
+    orcid: 'https://orcid.org/0000-0002-1058-1078'
   - given-names: Elise
     family-names: Morrison
     orcid: 'https://orcid.org/0000-0003-2569-4259'
