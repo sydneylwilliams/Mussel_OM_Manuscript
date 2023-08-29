@@ -1,0 +1,1866 @@
+---
+title: "OM_MusselStudy_FullyBayesian"
+author: "Sydney Williams"
+date: "2023-07-29"
+output: html_document
+---
+
+```{r MixSIAR install}
+# install.packages("devtools")
+# remotes::install_GitHub/MixSIAR_Programming("brianstock/MixSIAR", dependencies=T, force = T)
+```
+```{r setup, include=FALSE}
+library(brms) # Bayesian Regression Models using 'Stan'
+library(cmdstanr) # R Interface to 'CmdStan'
+library(bayesplot) # Plotting for Bayesian Models
+library(here) # A Simpler Way to Find Your Files
+library(tidyverse) 
+library(ggplot2)
+library(ggthemes)
+library(posterior) # summarize draws
+library(flextable)
+
+set_cmdstan_path("C:/Program Files/.cmdstan/cmdstan-2.32.2/")
+
+# JAGS set up
+# install -- https://sourceforge.net/projects/mcmc-jags/files/
+library(rjags)
+
+# MixSIAR install
+# install.packages("devtools")
+# remotes::install_github("brianstock/MixSIAR", dependencies=T, force = T)
+library(MixSIAR)
+library(Matrix)
+```
+
+```{r set up data}
+
+# download a .zip file of repository and unzip
+download.file(url = "https://github.com/sydneylwilliams/Mussel_OM_Manuscript/archive/refs/heads/main.zip", destfile = "Mussel_OM_Manuscript.zip")
+
+unzip(zipfile = "Mussel_OM_Manuscript.zip")
+
+fls <- list.files(
+  here::here("Mussel_OM_Manuscript-main")
+)
+
+dir <- here::here("Mussel_OM_Manuscript-main")
+
+mixdir <- here::here("Mussel_OM_Manuscript-main/MixSIAR_Programming")
+
+outputdir <- here::here("Mussel_OM_Manuscript-main/MixSIAR_Programming/OutputFiles")
+
+```
+
+### Bulk Geochemistry and Biomass Analyses 
+# Sedimentation Study
+```{r sedimentation bulk geochem models}
+
+# read in sedimentation geochemistry data
+sed_geochem <- read.csv(paste0(dir, "/", fls[9]))
+
+# formulas for multivariate response
+##### mi() ensures data will be included in models if the some variables are missing data
+
+sedN <- bf(PercWtTN | mi() ~ AreaType) + gaussian()
+sedC <- bf(PercWtTOC | mi() ~ AreaType) + gaussian()
+sedDW <- bf(DryWeight_g ~ AreaType) + Gamma(link = "log")
+
+# model
+
+sed_multi <- brm(
+  sedN+sedC+sedDW + set_rescor(FALSE),
+  data = sed_geochem,
+  chains = 4,
+  cores = 4, 
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(sed_multi, ndraws = 100, resp = "PercWtTN")
+pp_check(sed_multi, ndraws = 100, resp = "PercWtTOC")
+pp_check(sed_multi, ndraws = 100, resp = "DryWeightg")
+
+sed_pos <- merge(summarise_draws(sed_multi), 
+                         summarise_draws(sed_multi, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable")  %>%
+  mutate(Study = "sedimentation",
+         Predictor = "area type (mussels)")
+
+bayesplot::mcmc_areas(sed_multi, regex_pars = "AreaType", prob = 0.9)
+
+sed_plot <- plot(conditional_effects(sed_multi), 
+     points = TRUE, 
+     theme = theme_tufte(),
+     ask = FALSE)
+```
+# Accumulation Study
+```{r accumulation bulk geochemistry models}
+# read in accumulation geochemistry data
+# remove OL5 as an outlier
+
+ac_geochem <- read.csv(paste0(dir, "/", fls[1])) %>%
+  filter(DryBulkDensity_g_cm3 < 0.44)
+
+# formulas for multivariate 
+acN <- bf(PercWtTN | mi() ~ AreaType) 
+acC <- bf(PercWtTOC | mi() ~ AreaType) 
+acDBD <- bf(DryBulkDensity_g_cm3 | mi() ~ AreaType) 
+
+# model
+
+ac_multi <- brm(
+  acN+acC+acDBD + set_rescor(TRUE),
+  data = ac_geochem,
+  chains = 4,
+  cores = 4, 
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(ac_multi, ndraws = 100, resp = "PercWtTN")
+pp_check(ac_multi, ndraws = 100, resp = "PercWtTOC")
+pp_check(ac_multi, ndraws = 100, resp = "DryBulkDensitygcm3")
+
+ac_pos <- merge(summarise_draws(ac_multi), 
+                         summarise_draws(ac_multi, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "accumulation",
+         Predictor = "area type (mussels)")
+
+bayesplot::mcmc_areas(ac_multi, regex_pars = "AreaType", prob = 0.95)
+
+ac_plot <- plot(conditional_effects(ac_multi),      
+     points = TRUE, 
+     theme = theme_tufte(),
+     point_args = list(width = .1),
+     ask = FALSE)
+
+# plots 
+
+ac_plot[["PercWtTN.PercWtTN_AreaType"]]+ 
+  ylim(0.35, 0.45) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+ac_plot[["PercWtTOC.PercWtTOC_AreaType"]]+ 
+  ylim(3.5, 5.5) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+ac_plot[["DryBulkDensitygcm3.DryBulkDensitygcm3_AreaType"]] + 
+  ylim(0.05, .4) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+```
+```{r mussel density effects on accumulation bulk geochemistry}
+# read in mussel density data
+md <- read.csv(paste0(dir, "/", fls[7]))
+
+# join to accumlation data
+md_ac <- left_join(ac_geochem, md) 
+
+
+md_ac_local <- md_ac %>%
+  drop_na(LocalMusselDensity_m2)
+
+# local density formulas
+acN_local <- bf(PercWtTN | mi() ~ 1 + LocalMusselDensity_m2)
+acC_local <- bf(PercWtTOC | mi() ~ 1 + LocalMusselDensity_m2)
+acDBD_local <- bf(DryBulkDensity_g_cm3 | mi() ~ 1 + LocalMusselDensity_m2)
+
+# local denisty model
+ac_local <- brm(
+  acN_local + acC_local + acDBD_local + set_rescor(TRUE),
+  data = md_ac_local,
+  chains = 4,
+  cores = 4,
+  iter = 10000,
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(ac_local, ndraws = 100, resp = "PercWtTN")
+pp_check(ac_local, ndraws = 100, resp = "PercWtTOC")
+pp_check(ac_local, ndraws = 100, resp = "DryBulkDensitygcm3")
+
+ac_local_plot <- plot(conditional_effects(ac_local),
+     points = TRUE,
+     ask = FALSE)
+
+ac_local_pos <- merge(summarise_draws(ac_local), 
+                         summarise_draws(ac_local, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "accumulation",
+         Predictor = "local mussel density")
+
+bayes_R2(ac_local)
+
+bayesplot::mcmc_areas(ac_local, regex_pars = "LocalMusselDensity_m2", prob = 0.95)
+
+# neighboring density
+md_ac_neigh <- md_ac %>%
+  drop_na(NeighboringMusselDensity_9pim2)
+
+# neighboring density formulas
+acN_neigh <- bf(PercWtTN | mi() ~ 1 + NeighboringMusselDensity_9pim2)
+acC_neigh <- bf(PercWtTOC | mi() ~ 1 + NeighboringMusselDensity_9pim2)
+acDBD_neigh <- bf(DryBulkDensity_g_cm3 | mi() ~ 1 + NeighboringMusselDensity_9pim2)
+
+# neighboring density models
+ac_neigh <- brm(
+  acN_neigh + acC_neigh + acDBD_neigh + set_rescor(TRUE),
+  data = md_ac_neigh,
+  chains = 4,
+  cores = 4,
+  iter = 10000,
+  backend = "cmdstanr",
+  refresh = 0
+)
+ac_neigh_plot <- plot(conditional_effects(ac_neigh),
+     points = TRUE,
+     theme = theme_tufte(),
+     ask = FALSE)
+
+pp_check(ac_local, ndraws = 100, resp = "PercWtTN")
+pp_check(ac_local, ndraws = 100, resp = "PercWtTOC")
+pp_check(ac_local, ndraws = 100, resp = "DryBulkDensitygcm3")
+
+ac_neigh_pos <- merge(summarise_draws(ac_neigh), 
+                         summarise_draws(ac_neigh, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "accumulation",
+         Predictor = "neighboring mussel density")
+
+bayes_R2(ac_neigh)
+
+bayesplot::mcmc_areas(ac_neigh, regex_pars = "NeighboringMusselDensity_9pim2", prob = 0.95)
+
+# ggplots
+
+# %TN
+ac_local_plot[["PercWtTN.PercWtTN_LocalMusselDensity_m2"]] + 
+  ylim(0.35, 0.45) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+ac_neigh_plot[["PercWtTN.PercWtTN_NeighboringMusselDensity_9pim2"]] + 
+  ylim(0.35, 0.45) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+# %TOC
+ac_local_plot[["PercWtTOC.PercWtTOC_LocalMusselDensity_m2"]] + 
+  ylim(3.5, 5.5) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+ac_neigh_plot[["PercWtTOC.PercWtTOC_NeighboringMusselDensity_9pim2"]] + 
+  ylim(3.5, 5.5) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+# DBD
+
+ac_local_plot[["DryBulkDensitygcm3.DryBulkDensitygcm3_LocalMusselDensity_m2"]] + 
+  ylim(.05, .4) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+ac_neigh_plot[["DryBulkDensitygcm3.DryBulkDensitygcm3_NeighboringMusselDensity_9pim2"]] + 
+  ylim(.05, .4) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+```
+# Storage Study
+```{r storage biomass models}
+cores <- read.csv(paste0(dir, "/", fls[10]))
+
+coreAGB <- bf(AbovegroundBiomass_dry_g ~ AreaType) + Gamma(link = "log")
+coreBGB <- bf(BelowgroundBiomass_dry_g ~ AreaType) + Gamma(link = "log")
+
+core_multi <- brm(
+  coreAGB+coreBGB + set_rescor(FALSE),
+  data = cores,
+  chains = 4,
+  cores = 4, 
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(core_multi, ndraws = 100, resp = "AbovegroundBiomassdryg")
+pp_check(core_multi, ndraws = 100, resp = "BelowgroundBiomassdryg")
+
+core_pos <- merge(summarise_draws(core_multi), 
+                         summarise_draws(core_multi, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "storage",
+         Predictor = "area type (mussels)")
+
+bayesplot::mcmc_areas(core_multi, regex_pars = "AreaType", prob = 0.95)
+
+core_plot <- plot(conditional_effects(core_multi),      
+     points = TRUE, 
+     theme = theme_tufte(),
+     ask = FALSE)
+
+# plots 
+
+core_plot[["AbovegroundBiomassdryg.AbovegroundBiomassdryg_AreaType"]]+ 
+  ylim(0, 35) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+core_plot[["BelowgroundBiomassdryg.BelowgroundBiomassdryg_AreaType"]]+ 
+  ylim(0, 15) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+
+```
+```{r mussel density effects on storage biomass}
+
+md_core <- left_join(cores, md) 
+
+coreAGB_local <- bf(AbovegroundBiomass_dry_g ~ 1 + LocalMusselDensity_m2) + lognormal()
+coreBGB_local <- bf(BelowgroundBiomass_dry_g ~ 1 + LocalMusselDensity_m2) + lognormal()
+
+# local denisty model
+md_core_local <- brm(
+  coreAGB_local + coreBGB_local + set_rescor(FALSE),
+  data = md_core,
+  chains = 4,
+  cores = 4,
+  iter = 10000,
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(md_core_local, ndraws = 100, resp = "AbovegroundBiomassdryg")
+pp_check(md_core_local, ndraws = 100, resp = "BelowgroundBiomassdryg")
+
+md_core_local_plot <- plot(conditional_effects(md_core_local),
+     points = TRUE,
+     ask = FALSE)
+
+md_core_local_pos <- merge(summarise_draws(md_core_local), 
+                         summarise_draws(md_core_local, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "storage",
+         Predictor = "local mussel density")
+
+bayes_R2(md_core_local)
+
+bayesplot::mcmc_areas(md_core_local, regex_pars = "LocalMusselDensity_m2", prob = 0.95)
+
+
+coreAGB_neigh <- bf(AbovegroundBiomass_dry_g ~ 1 + NeighboringMusselDensity_9pim2) + lognormal()
+coreBGB_neigh <- bf(BelowgroundBiomass_dry_g ~ 1 + NeighboringMusselDensity_9pim2) + lognormal()
+
+# neigh denisty model
+md_core_neigh <- brm(
+  coreAGB_neigh + coreBGB_neigh + set_rescor(FALSE),
+  data = md_core,
+  chains = 4,
+  cores = 4,
+  iter = 10000,
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(md_core_neigh, ndraws = 100, resp = "AbovegroundBiomassdryg")
+pp_check(md_core_neigh, ndraws = 100, resp = "BelowgroundBiomassdryg")
+
+md_core_neigh_plot <- plot(conditional_effects(md_core_neigh),
+     points = TRUE,
+     ask = FALSE)
+
+md_core_neigh_pos <- merge(summarise_draws(md_core_neigh), 
+                         summarise_draws(md_core_neigh, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "storage",
+         Predictor = "neighboring mussel density")
+
+bayes_R2(md_core_neigh)
+
+bayesplot::mcmc_areas(md_core_neigh, regex_pars = "NeighboringMusselDensity_9pim2", prob = 0.95)
+
+# ggplots
+
+# AGB
+md_core_local_plot[["AbovegroundBiomassdryg.AbovegroundBiomassdryg_LocalMusselDensity_m2"]] + 
+  ylim(0, 35) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+md_core_neigh_plot[["AbovegroundBiomassdryg.AbovegroundBiomassdryg_NeighboringMusselDensity_9pim2"]] + 
+  ylim(0, 35) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+# BGB
+md_core_local_plot[["BelowgroundBiomassdryg.BelowgroundBiomassdryg_LocalMusselDensity_m2"]] + 
+  ylim(0, 15) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+md_core_neigh_plot[["BelowgroundBiomassdryg.BelowgroundBiomassdryg_NeighboringMusselDensity_9pim2"]] + 
+  ylim(0, 15) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+
+```
+```{r storage bulk geochemistry models}
+leaf_geochem <- read.csv(paste0(dir, "/", fls[11]))
+
+# formulas for multivariate 
+leafN <- bf(PercWtTN ~ AreaType) 
+leafC <- bf(PercWtTOC ~ AreaType) 
+
+# model
+
+leaf_multi <- brm(
+  leafN + leafC + set_rescor(FALSE),
+  data = leaf_geochem,
+  chains = 4,
+  cores = 4, 
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(leaf_multi, ndraws = 100, resp = "PercWtTN")
+pp_check(leaf_multi, ndraws = 100, resp = "PercWtTOC")
+
+leaf_pos <- merge(summarise_draws(leaf_multi), 
+                         summarise_draws(leaf_multi, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "storage",
+         Predictor = "area type (mussels)")
+
+bayesplot::mcmc_areas(leaf_multi, regex_pars = "AreaType", prob = 0.95)
+
+leaf_plot <- plot(conditional_effects(leaf_multi),      
+     points = TRUE, 
+     theme = theme_tufte(),
+     ask = FALSE)
+
+# plots 
+
+leaf_plot[["PercWtTN.PercWtTN_AreaType"]]+ 
+  ylim(0.8, 1.75) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+leaf_plot[["PercWtTOC.PercWtTOC_AreaType"]]+ 
+  ylim(36, 43) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+```
+```{r mussel density effects on storage bulk geochemistry}
+
+md_leaf <- left_join(leaf_geochem, md) 
+
+# local density formulas
+leafN_local <- bf(PercWtTN ~ 1 + LocalMusselDensity_m2)
+leafC_local <- bf(PercWtTOC ~ 1 + LocalMusselDensity_m2)
+
+# local denisty model
+md_leaf_local <- brm(
+  leafN_local + leafC_local + set_rescor(TRUE),
+  data = md_leaf,
+  chains = 4,
+  cores = 4,
+  iter = 10000,
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(md_leaf_local, ndraws = 100, resp = "PercWtTN")
+pp_check(md_leaf_local, ndraws = 100, resp = "PercWtTOC")
+
+md_leaf_local_plot <- plot(conditional_effects(md_leaf_local),
+     points = TRUE,
+     ask = FALSE)
+
+md_leaf_local_pos <- merge(summarise_draws(md_leaf_local), 
+                         summarise_draws(md_leaf_local, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "storage",
+         Predictor = "local mussel density")
+
+bayes_R2(md_leaf_local)
+
+bayesplot::mcmc_areas(md_leaf_local, regex_pars = "LocalMusselDensity_m2", prob = 0.95)
+
+# neighboring density formulas
+leafN_neigh <- bf(PercWtTN ~ 1 + NeighboringMusselDensity_9pim2)
+leafC_neigh <- bf(PercWtTOC ~ 1 + NeighboringMusselDensity_9pim2)
+
+# neighboring density models
+md_leaf_neigh <- brm(
+  leafN_neigh + leafC_neigh + set_rescor(TRUE),
+  data = md_leaf,
+  chains = 4,
+  cores = 4,
+  iter = 10000,
+  backend = "cmdstanr",
+  refresh = 0
+)
+md_leaf_neigh_plot <- plot(conditional_effects(md_leaf_neigh),
+     points = TRUE,
+     theme = theme_tufte(),
+     ask = FALSE)
+
+pp_check(md_leaf_local, ndraws = 100, resp = "PercWtTN")
+pp_check(md_leaf_local, ndraws = 100, resp = "PercWtTOC")
+
+md_leaf_neigh_pos <- merge(summarise_draws(md_leaf_neigh), 
+                         summarise_draws(md_leaf_neigh, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable") %>%
+  mutate(Study = "storage",
+         Predictor = "neighboring mussel density")
+
+bayes_R2(md_leaf_neigh)
+
+bayesplot::mcmc_areas(md_leaf_neigh, regex_pars = "NeighboringMusselDensity_9pim2", prob = 0.95)
+
+# ggplots
+
+# %TN
+md_leaf_local_plot[["PercWtTN.PercWtTN_LocalMusselDensity_m2"]] + 
+  ylim(0.8, 1.75) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+md_leaf_neigh_plot[["PercWtTN.PercWtTN_NeighboringMusselDensity_9pim2"]] + 
+  ylim(0.8, 1.75) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+# %TOC
+md_leaf_local_plot[["PercWtTOC.PercWtTOC_LocalMusselDensity_m2"]] + 
+  ylim(36, 43) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+md_leaf_neigh_plot[["PercWtTOC.PercWtTOC_NeighboringMusselDensity_9pim2"]] + 
+  ylim(36, 43) +
+  xlim(0, 700) +
+  theme_tufte()+
+  theme(axis.line = element_line())
+
+
+```
+```{r aboveground C and N biomass}
+
+agb_CN <- left_join(leaf_geochem, cores) %>%
+  mutate(gCorg_m2_AGB = (AbovegroundBiomass_dry_g*(PercWtTOC/100))/(pi*(.0375^2)),
+         gNorg_m2_AGB = (AbovegroundBiomass_dry_g*(PercWtTN/100))/(pi*(.0375^2)))
+
+agb_C <- bf(gCorg_m2_AGB ~ AreaType) + lognormal()
+agb_N <- bf(gNorg_m2_AGB ~ AreaType) + lognormal()
+
+agb_multi <- brm(
+  agb_N + agb_C + set_rescor(FALSE),
+  data = agb_CN,
+  chains = 4,
+  cores = 4, 
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(agb_multi, ndraws = 100, resp = "gCorgm2AGB")
+pp_check(agb_multi, ndraws = 100, resp = "gNorgm2AGB")
+
+agb_pos <- merge(summarise_draws(agb_multi), 
+                         summarise_draws(agb_multi, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable")  %>%
+  mutate(Study = "storage",
+         Predictor = "area type (mussels)")
+
+bayesplot::mcmc_areas(agb_multi, regex_pars = "AreaType", prob = 0.9)
+
+agb_plot <- plot(conditional_effects(agb_multi), 
+     points = TRUE, 
+     point_args = list(width = .2),
+     theme = theme_tufte(),
+     ask = FALSE)
+
+agb_plot[["gNorgm2AGB.gNorgm2AGB_AreaType"]] +  
+  ylim(0, 80) +
+  theme(axis.line = element_line())
+
+agb_plot[["gCorgm2AGB.gCorgm2AGB_AreaType"]] +  
+  ylim(0, 3000) +
+  theme(axis.line = element_line())
+```
+```{r mussel density effects on aboveground C and N biomass}
+
+md_agb_CN <- left_join(agb_CN, md)
+
+agb_C_local <- bf(gCorg_m2_AGB ~ 1 + LocalMusselDensity_m2) + lognormal()
+agb_N_local <- bf(gNorg_m2_AGB ~ 1 + LocalMusselDensity_m2) + lognormal()
+
+agb_local <- brm(
+  agb_N_local + agb_C_local + set_rescor(FALSE),
+  data = md_agb_CN,
+  chains = 4,
+  cores = 4, 
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(agb_local, ndraws = 100, resp = "gCorgm2AGB")
+pp_check(agb_local, ndraws = 100, resp = "gNorgm2AGB")
+
+agb_local_pos <- merge(summarise_draws(agb_local), 
+                         summarise_draws(agb_local, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable")  %>%
+  mutate(Study = "storage",
+         Predictor = "local mussel density")
+
+bayes_R2(agb_local)
+
+bayesplot::mcmc_areas(agb_local, regex_pars = "LocalMusselDensity_m2", prob = 0.9)
+
+agb_local_plot <- plot(conditional_effects(agb_local), 
+     points = TRUE, 
+     theme = theme_tufte(),
+     ask = FALSE)
+
+agb_C_neigh <- bf(gCorg_m2_AGB ~ 1 + NeighboringMusselDensity_9pim2) + lognormal()
+agb_N_neigh <- bf(gNorg_m2_AGB ~ 1 + NeighboringMusselDensity_9pim2) + lognormal()
+
+agb_neigh <- brm(
+  agb_N_neigh + agb_C_neigh + set_rescor(FALSE),
+  data = md_agb_CN,
+  chains = 4,
+  cores = 4, 
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(agb_neigh, ndraws = 100, resp = "gCorgm2AGB")
+pp_check(agb_neigh, ndraws = 100, resp = "gNorgm2AGB")
+
+agb_neigh_pos <- merge(summarise_draws(agb_neigh), 
+                         summarise_draws(agb_neigh, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable")  %>%
+  mutate(Study = "storage",
+         Predictor = "neighboring mussel density")
+
+bayesplot::mcmc_areas(agb_neigh, regex_pars = "NeighboringMusselDensity_9pim2", prob = 0.9)
+
+agb_neigh_plot <- plot(conditional_effects(agb_neigh), 
+     points = TRUE, 
+     theme = theme_tufte(),
+     ask = FALSE)
+
+
+agb_local_plot[["gNorgm2AGB.gNorgm2AGB_LocalMusselDensity_m2"]] +  
+  ylim(0, 80) +
+  xlim(0, 700) +
+  theme(axis.line = element_line())
+
+agb_local_plot[["gCorgm2AGB.gCorgm2AGB_LocalMusselDensity_m2"]] +  
+  ylim(0, 3000) +
+  xlim(0, 700) +
+  theme(axis.line = element_line())
+
+agb_neigh_plot[["gNorgm2AGB.gNorgm2AGB_NeighboringMusselDensity_9pim2"]] +  
+  ylim(0, 80) +
+  xlim(0, 700) +
+  theme(axis.line = element_line())
+
+agb_neigh_plot[["gCorgm2AGB.gCorgm2AGB_NeighboringMusselDensity_9pim2"]] +  
+  ylim(0, 3000) +
+  xlim(0, 700) +
+  theme(axis.line = element_line())
+
+```
+```{r supplemental table summarizing bulk geochem multivariate models (Table S2)}
+
+# bulk geochemistry
+GeochemistryFT <- list(sed_pos, ac_pos, 
+                       md_ac_local_pos, md_ac_neigh_pos, 
+                       core_pos, md_core_local_pos, md_core_neigh_pos,
+                       leaf_pos, md_leaf_local_pos, md_leaf_neigh_pos)  %>%
+  bind_rows() %>%
+  mutate(median = round(median, digits = 4)) %>%
+  rename('Median Estimate' = "median",
+         lower = "q5",
+         upper = "q95") %>%
+  mutate(lower = round(lower, digits = 4),
+         upper = round(upper, digits = 4),
+         '90% CI' = paste("(", lower, ",", " ", upper, ")", sep = ""),
+         Response = ifelse(str_detect(variable, "b_PercWtTOC") == TRUE, "%TOC",
+                           ifelse(str_detect(variable, "b_PercWtTN") == TRUE, "%TN",
+                                  ifelse(str_detect(variable, "b_DryWeigh") == TRUE, "dry weight",
+                                         ifelse(str_detect(variable, "b_DryBulk") == TRUE, "dry bulk density",
+                                                ifelse(str_detect(variable, "b_Above") == TRUE, "aboveground biomass",
+                                                       ifelse(str_detect(variable, "b_Below") == TRUE, "belowground biomass", NA)))))),
+         Response = ifelse(str_detect(variable, "Intercept") == TRUE, NA, Response)) %>%
+  drop_na(Response) %>%
+  arrange(factor(Study, levels = c("sedimentation", "accumulation", "storage")), Predictor) %>%
+  dplyr::select(c(Study, Predictor, Response, 'Median Estimate', '90% CI')) %>%
+  flextable() %>%
+  merge_v(j = c('Study', 'Predictor')) %>%
+  align(align = "left", part = "all") %>%
+  valign(valign = "top") %>%
+  width(j = c('Predictor', 'Median Estimate', '90% CI'), width = 4, unit = "cm") %>%
+  width(j = 'Response', width = 5, unit = "cm") %>%
+  border_inner_h()
+
+save_as_pptx(GeochemistryFT, path = "Figures/Revision/TableS2_NOL5.pptx")
+```
+
+### Stable Isotope Mixing Models for Sedimentation and Accumulation Studies
+```{r mixture data for all models}
+mixingdata <- read.csv(paste0(dir, "/", fls[4]))
+```
+# Sedimentation Study -- Sestonic POM
+```{r sestonic POM}
+# discrete surface water samples were collected across the dean creek Study site
+# ....replicates have been averaged
+wcMix <- mixingdata %>%
+  filter(SampleType == "Sestonic POM") %>%
+  select(d15N, d13C) %>%
+  drop_na()
+
+write.csv(wcMix, file = paste0(mixdir, "/MixingDataSubsetted/wcMix.csv"))
+
+# discrimination factors will all be 0 for each source
+
+wcDiscr <- wcMix %>%
+  rowid_to_column("index") %>%
+  mutate(S.alt_d13C = 0,
+         S.alt_d15N = 0,
+         Sound_d13C = 0,
+         Sound_d15N = 0,
+         BenthicAlgea_d13C = 0,
+         BenthicAlgea_d15N = 0) %>%
+  pivot_longer(cols = c("S.alt_d13C", "S.alt_d15N", "Sound_d13C", "Sound_d15N", "BenthicAlgea_d13C", "BenthicAlgea_d15N"),  names_to = c("SampleType", "SI"),
+               names_pattern = "(.+)_(.+)") %>%
+  select(c("index", "SampleType", "SI", "value")) %>%
+  pivot_wider(id_cols = c("index", "SampleType"), names_from = SI, values_from = value) %>%
+  group_by(SampleType) %>%
+    summarise(Meand13C = mean(d13C),
+            SDd13C = sd(d13C),
+            Meand15N = mean(d15N),
+            SDd15N = sd(d15N),
+            n = length(SampleType)) %>%
+  select(-SampleType)
+
+write.csv(wcDiscr, file = paste0(mixdir, "/DiscriminationFactors/wcDiscr.csv"))
+
+# Load the mixture/consumer data
+wcmix <- load_mix_data(filename= paste0(mixdir, "/MixingDataSubsetted/wcMix.csv"), 
+                     iso_names=c("d13C","d15N"), 
+                     factors = NULL, 
+                     fac_random= NULL, 
+                     fac_nested= NULL, 
+                     cont_effects=NULL)
+
+wcsource <- load_source_data(filename= paste0(dir, "/", fls[6]),
+                           source_factors= NULL, 
+                           conc_dep= T, 
+                           data_type="means", 
+                           wcmix)
+
+wcdiscr <- load_discr_data(filename = paste0(mixdir, "/DiscriminationFactors/wcDiscr.csv"), wcmix)
+
+wcIsospace <- plot_data(filename= paste0(mixdir, "/IsospacePlots/wc_isospace_plot"), 
+          plot_save_pdf=FALSE, 
+          plot_save_png=TRUE, 
+          wcmix, wcsource, wcdiscr,
+          return_obj = T)
+```
+```{r sestonic POM JAGS model}
+wcmodel_filename <- paste0(outputdir, "/wcMixSIAR_model.txt")
+
+resid_err <- TRUE  #will be used for mixing models here and below
+
+process_err <- TRUE  #will be used for mixing models here and below
+
+write_JAGS_model(wcmodel_filename, resid_err, process_err, wcmix, wcsource)
+
+wc.jags.1 <- run_model(run = "short", wcmix, wcsource, wcdiscr, wcmodel_filename)
+
+wcoutput_options <- list(summary_save = TRUE,
+                       summary_name = paste0(outputdir, "/wcsummary_statistics"),
+                       sup_post = FALSE,
+                       plot_post_save_pdf = TRUE,
+                       plot_post_name = paste0(outputdir, "/wcposterior_density"),
+                       sup_pairs = FALSE,
+                       plot_pairs_save_pdf = TRUE,
+                       plot_pairs_name = paste0(outputdir, "/wcpairs_plot"),
+                       sup_xy = FALSE,
+                       plot_xy_save_pdf = TRUE,
+                       plot_xy_name = paste0(outputdir, "/wcxy_plot"),
+                       gelman = TRUE,
+                       heidel = FALSE,
+                       geweke = TRUE,
+                       diag_save = TRUE,
+                       diag_name = paste0(outputdir, "/wcdiagnostics"),
+                       indiv_effect = FALSE,
+                       plot_post_save_png = FALSE,
+                       plot_pairs_save_png = FALSE,
+                       plot_xy_save_png = FALSE,
+                       diag_save_ggmcmc = FALSE,
+                       return_obj = TRUE)
+
+output_JAGS(wc.jags.1, wcmix, wcsource, wcoutput_options)
+
+# Original output
+
+summary_stat(combine_sources(wc.jags.1, wcmix, wcsource,
+                              groups = list(S.alt_AG = "1",
+                                            pelagicPhytoplankton = "2",
+                                            benthicAlgae = "3")))
+
+wcpost <- output_posteriors(wc.jags.1, wcmix, wcsource, wcoutput_options)
+
+wcpost_use <- WCpost[["global"]][["data"]] %>%
+  mutate(sample = "surface water POM") %>%
+  mutate(sources = factor(sources, levels = c("1", "2", "3"), labels = c("aboveground S. alterniflora detritus", "marine-derived POM", "benthic microalgea")))
+
+############ write.csv(WCpost1, file = "MixSIAR/WaterColumnMixSIARResults_ThreeEndMem_acidified.csv")
+
+# Combine into allochthonous and autochthonous
+
+wcCombined <- combine_sources(wc.jags.1, wcmix, wcsource,
+                              groups = list(autochthonous = c("1", "3"),
+                                            allochthonous = c("2")))
+summary_stat(wcCombined)
+
+wcCombined_use <- as.data.table(wcCombined[["post"]]) %>%
+  pivot_longer(col = c("p.global[1]", "p.global[2]"),
+               names_to = "sources",
+               values_to = "proportion") %>%
+  mutate(sources = factor(sources, levels = c("p.global[1]", "p.global[2]"), labels = c("autochthonous", "allochthonous")),
+         sample = "surface water POM") %>%
+  select(c("sources", "proportion", "sample")) %>%
+  rename("x" = 2)
+
+
+########### write.csv(wcCombined_dt, file = "MixSIAR/WaterColumnMixSIARResults_Combined_ThreeEndMem_acidified.csv")
+```
+# Sedimentation Study -- Sedimentation Samples
+```{r sedimentation samples}
+sedimentationMix <- mixingdata %>%
+  filter(SampleType == "Deposit") %>%
+  select(AreaType, d15N, d13C)
+
+write.csv(sedimentationMix, file = paste0(mixdir, "/MixingDataSubsetted/sedimentationMix.csv"))
+
+sedimentationDiscr <- sedimentationMix %>%
+  rowid_to_column("index") %>%
+  mutate(S.alt_d13C = 0,
+         S.alt_d15N = 0,
+         Sound_d13C = 0,
+         Sound_d15N = 0,
+         BenthicAlgea_d13C = 0,
+         BenthicAlgea_d15N = 0) %>%
+  pivot_longer(cols = c("S.alt_d13C", "S.alt_d15N", "Sound_d13C", "Sound_d15N", "BenthicAlgea_d13C", "BenthicAlgea_d15N"),  names_to = c("SampleType", "SI"),
+               names_pattern = "(.+)_(.+)") %>%
+  select(c("index", "SampleType", "SI", "value")) %>%
+  pivot_wider(id_cols = c("index", "SampleType"), names_from = SI, values_from = value) %>%
+  group_by(SampleType) %>%
+    summarise(Meand13C = mean(d13C),
+            SDd13C = sd(d13C),
+            Meand15N = mean(d15N),
+            SDd15N = sd(d15N),
+            n = length(SampleType)) %>%
+  select(-SampleType)
+
+write.csv(sedimentationDiscr, file = paste0(mixdir, "/DiscriminationFactors/sedimentationDiscr.csv"))
+
+# Load the mixture/consumer data
+sedimentationmix <- load_mix_data(filename= paste0(mixdir, "/MixingDataSubsetted/sedimentationMix.csv"), 
+                     iso_names=c("d13C","d15N"), 
+                     factors = "AreaType", 
+                     fac_random= TRUE, 
+                     fac_nested= NULL, 
+                     cont_effects=NULL)
+
+sedimentationsource <- load_source_data(filename= paste0(dir, "/", fls[6]),
+                           source_factors= NULL, 
+                           conc_dep=T, 
+                           data_type="means", 
+                           sedimentationmix)
+
+sedimentationdiscr <- load_discr_data(filename = paste0(mixdir, "/DiscriminationFactors/sedimentationDiscr.csv"), sedimentationmix)
+
+sedimentationIsospace <- plot_data(filename= paste0(mixdir, "/IsospacePlots/sedimentation_isospace_plot"), 
+          plot_save_pdf=FALSE, 
+          plot_save_png=TRUE, 
+          sedimentationmix, sedimentationsource, sedimentationdiscr,
+          return_obj = T)
+
+```
+```{r sedimentation JAGS model}
+
+sedimentationmodel_filename <- paste0(outputdir, "/sedimentationMixSIAR_model.txt")
+
+write_JAGS_model(sedimentationmodel_filename, resid_err, process_err, sedimentationmix, sedimentationsource)
+
+sedimentation.jags.1 <- run_model(run = "short", sedimentationmix, sedimentationsource, sedimentationdiscr, sedimentationmodel_filename)
+
+sedimentationoutput_options <- list(summary_save = TRUE,
+                       summary_name = paste0(outputdir, "/sedimentationsummary_statistics"),
+                       sup_post = FALSE,
+                       plot_post_save_pdf = TRUE,
+                       plot_post_name = paste0(outputdir, "/sedimentationposterior_density"),
+                       sup_pairs = FALSE,
+                       plot_pairs_save_pdf = TRUE,
+                       plot_pairs_name = paste0(outputdir, "/sedimentationpairs_plot"),
+                       sup_xy = FALSE,
+                       plot_xy_save_pdf = TRUE,
+                       plot_xy_name = paste0(outputdir, "/sedimentationxy_plot"),
+                       gelman = TRUE,
+                       heidel = FALSE,
+                       geweke = TRUE,
+                       diag_save = TRUE,
+                       diag_name = paste0(outputdir, "/sedimentationdiagnostics"),
+                       indiv_effect = FALSE,
+                       plot_post_save_png = FALSE,
+                       plot_pairs_save_png = FALSE,
+                       plot_xy_save_png = FALSE,
+                       diag_save_ggmcmc = FALSE,
+                       return_obj = TRUE)
+
+output_JAGS(sedimentation.jags.1, sedimentationmix, sedimentationsource, sedimentationoutput_options)
+
+summary_stat(combine_sources(sedimentation.jags.1, sedimentationmix, sedimentationsource,
+                              groups = list(S.alt_AG = "1",
+                                            pelagicPhytoplankton = "2",
+                                            benthicAlgae = "3")))
+
+sedimentationpost <- output_posteriors(sedimentation.jags.1, sedimentationmix, sedimentationsource, sedimentationoutput_options)
+
+sedimentationPostCordgrass <- sedimentationpost[["fac1"]][[1]][["data"]] %>%
+  mutate(sample = "cordgrass only")
+
+sedimentationPostMussels <- sedimentationpost[["fac1"]][[2]][["data"]] %>%
+  mutate(sample = "mussels")
+
+sedimentationpost_use <- rbind(sedimentationPostCordgrass, sedimentationPostMussels) %>%
+  mutate(sources = factor(sources, levels = c("1", "2", "3"), labels = c("aboveground S. alterniflora detritus", "marine-derived POM", "benthic microalgea")))
+
+################write.csv(sedimentationThreeEndMem_dt, file = "MixSIAR/sedimentationMixSIARResults_ThreeEndMem_acidified.csv")
+
+# combine into allochthonous and autochthonous groups
+sedimentationCombined <- combine_sources(sedimentation.jags.1, sedimentationmix, sedimentationsource,
+                              groups = list(autochthonous = c("1", "3"),
+                                            allochthonous = c("2")))
+summary_stat(sedimentationCombined)
+
+# outputs formatted into workable datatable
+
+sedimentationCombined_use <- as.data.table(sedimentationCombined[["post"]]) %>%
+  pivot_longer(col = c("p.fac1[1,1]", "p.fac1[1,2]", "p.fac1[2,1]", "p.fac1[2,2]"),
+               names_to = "combo",
+               values_to = "proportion") %>%
+  mutate(sample = ifelse(combo == "p.fac1[1,1]" | combo == "p.fac1[1,2]", "cordgrass only", "mussels"),
+         sources = ifelse(combo == "p.fac1[1,1]" | combo == "p.fac1[2,1]", "autochthonous", "allochthonous")) %>%
+  select(c("sources", "proportion", "sample")) %>%
+  rename("x" = 2)
+
+##################write.csv(sedimentationCombined_dt, file = "MixSIAR/sedimentationMixSIARResults_Combined_ThreeEndMem_acidified.csv")
+```
+# Accumulation Study
+```{r accumulation samples}
+
+# mussel density
+
+density <- read.csv(paste0(dir, "/", fls[7]))
+
+# Mussel biodeposition mix
+
+AccumulationMix <- mixingdata %>%
+  filter(SampleType == "Sediment") %>%
+  merge(density, by = c("AreaType", "AreaID")) %>%
+  unite("Density", LocalMusselDensity_m2:NeighboringMusselDensity_9pim2, sep = "", na.rm = T) %>%
+  select(c("AreaType", "d13C", "d15N", "Density"))
+
+write.csv(AccumulationMix, file = paste0(mixdir, "/MixingDataSubsetted/AccumulationMix.csv"))
+    
+AccumulationDiscr <- AccumulationMix %>%
+  rowid_to_column("index") %>%
+  mutate(S.alt_d13C = 0,
+         S.alt_d15N = 0,
+         Sound_d13C = 0,
+         Sound_d15N = 0,
+         BenthicAlgea_d13C = 0,
+         BenthicAlgea_d15N = 0) %>%
+  pivot_longer(cols = c("S.alt_d13C", "S.alt_d15N", "Sound_d13C", "Sound_d15N", "BenthicAlgea_d13C", "BenthicAlgea_d15N"),  names_to = c("SampleType", "SI"),
+               names_pattern = "(.+)_(.+)") %>%
+  select(c("index", "SampleType", "SI", "value")) %>%
+  pivot_wider(id_cols = c("index", "SampleType"), names_from = SI, values_from = value) %>%
+  group_by(SampleType) %>%
+    summarise(Meand13C = mean(d13C),
+            SDd13C = sd(d13C),
+            Meand15N = mean(d15N),
+            SDd15N = sd(d15N),
+            n = length(SampleType)) %>%
+  select(-SampleType)
+
+
+write.csv(AccumulationDiscr, file = paste0(mixdir, "/DiscriminationFactors/AccumulationDiscr.csv"))
+
+# Load the mixture/consumer data
+Accumulationmix <- load_mix_data(filename= paste0(mixdir, "/MixingDataSubsetted/AccumulationMix.csv"), 
+                     iso_names=c("d13C","d15N"), 
+                     factors = "AreaType", 
+                     fac_random= TRUE,  
+                     fac_nested= NULL, 
+                     cont_effects= "Density")
+
+Accumulationsource <- load_source_data(filename= paste0(dir, "/", fls[3]),
+                           source_factors= NULL, 
+                           conc_dep=T, 
+                           data_type="means", 
+                           Accumulationmix)
+
+Accumulationdiscr <- load_discr_data(filename = paste0(mixdir, "/DiscriminationFactors/AccumulationDiscr.csv"), 
+                                     Accumulationmix)
+
+
+AccumulationIsospace <- plot_data(filename= paste0(mixdir, "/IsospacePlots/accumulation_isospace_plot"), 
+          plot_save_pdf=FALSE, 
+          plot_save_png=TRUE, 
+          Accumulationmix, Accumulationsource, Accumulationdiscr,
+          return_obj = T)
+```
+```{r accumulation JAGS model -- mussel presence treated as a random effect}
+
+Accumulationmodel_filename <- paste0(outputdir, "/AccumulationMixSIAR_model.txt")
+
+write_JAGS_model(Accumulationmodel_filename, resid_err, process_err, Accumulationmix, Accumulationsource)
+
+Accumulation.jags.1 <- run_model(run = "test", Accumulationmix, Accumulationsource, Accumulationdiscr, Accumulationmodel_filename)
+
+Accumulationoutput_options <- list(summary_save = TRUE,
+                       summary_name = paste0(outputdir, "/Accumulationsummary_statistics"),
+                       sup_post = FALSE,
+                       plot_post_save_pdf = TRUE,
+                       plot_post_name = paste0(outputdir, "/Accumulationposterior_density"),
+                       sup_pairs = FALSE,
+                       plot_pairs_save_pdf = TRUE,
+                       plot_pairs_name = paste0(outputdir, "/Accumulationpairs_plot"),
+                       sup_xy = FALSE,
+                       plot_xy_save_pdf = TRUE,
+                       plot_xy_name = paste0(outputdir, "/Accumulationxy_plot"),
+                       gelman = TRUE,
+                       heidel = FALSE,
+                       geweke = TRUE,
+                       diag_save = TRUE,
+                       diag_name = paste0(outputdir, "/Accumulationdiagnostics"),
+                       indiv_effect = FALSE,
+                       plot_post_save_png = FALSE,
+                       plot_pairs_save_png = FALSE,
+                       plot_xy_save_png = FALSE,
+                       diag_save_ggmcmc = FALSE,
+                       return_obj = TRUE)
+
+output_JAGS(Accumulation.jags.1, Accumulationmix, Accumulationsource, Accumulationoutput_options)
+
+Accumulationpost <- output_posteriors(Accumulation.jags.1, Accumulationmix, Accumulationsource, Accumulationoutput_options)
+
+summary_stat(combine_sources(Accumulation.jags.1, Accumulationmix, Accumulationsource,
+                              groups = list(S.alt_BG = "1",
+                                            pelagicPhytoplankton = "2",
+                                            benthicAlgae = "3")))
+
+AccumPostMussels <- Accumulationpost[["fac1"]][[2]][["data"]] %>%
+  mutate(sample = "mussel aggregation")
+
+AccumPostCordgrass <- Accumulationpost[["fac1"]][[1]][["data"]] %>%
+  mutate(sample = "cordgrass only")
+
+Accumulationpost_use <- rbind(DepPostCordgrass, DepPostMussels) %>%
+  mutate(sources = factor(sources, levels = c("1", "2", "3"), labels = c("S. alterniflora detritus", "marine-derived POM", "benthic microalgea")))
+
+#############write.csv(AccumulationThreeEndMem_dt, file = "MixSIAR/AccumulationMixSIARResults_ThreeEndMem_acidified.csv")
+
+# combine into allochthonous and autochthonous groups
+AccumulationCombined <- combine_sources(Accumulation.jags.1, Accumulationmix, Accumulationsource,
+                              groups = list(autochthonous = c("1", "3"),
+                                            allochthonous = c("2")))
+summary_stat(AccumulationCombined)
+
+# outputs formatted into workable datatable
+
+AccumulationCombined_use <- as.data.table(AccumulationCombined[["post"]]) %>%
+  pivot_longer(col = c("p.fac1[1,1]", "p.fac1[1,2]", "p.fac1[2,1]", "p.fac1[2,2]"),
+               names_to = "combo",
+               values_to = "proportion") %>%
+  mutate(sample = ifelse(combo == "p.fac1[1,1]" | combo == "p.fac1[1,2]", "cordgrass only", "mussels"),
+         sources = ifelse(combo == "p.fac1[1,1]" | combo == "p.fac1[2,1]", "autochthonous", "allochthonous")) %>%
+  select(c("sources", "proportion", "sample")) %>%
+  rename("x" = 2)
+
+################write.csv(AccumulationCombined_dt, file = "MixSIAR/AccumulationMixSIARResults_Combined_ThreeEndMem_acidified.csv")
+
+
+```
+```{r accumulation JAGS models separated by area type to extract slope coefficients of continuous effects}
+
+# mussel accumulation mix -- all else stays the same
+
+musselAccumMix <- AccumulationMix %>%
+  filter(AreaType == "mussels") %>%
+  select(d15N, d13C, Density)
+
+write.csv(musselAccumMix, file = paste0(mixdir, "/MixingDataSubsetted/musselAccumMix.csv"))
+
+# Load the mixture/consumer data
+musselAccummix <- load_mix_data(filename= paste0(mixdir, "/MixingDataSubsetted/musselAccumMix.csv"), 
+                     iso_names=c("d13C","d15N"), 
+                     factors = NULL, 
+                     fac_random= NULL,  
+                     fac_nested= NULL, 
+                     cont_effects= "Density")
+
+# Model
+
+musselAccummodel_filename <- paste0(outputdir, "/musselAccumMixSIAR_model.txt")
+
+write_JAGS_model(musselAccummodel_filename, resid_err, process_err, musselAccummix, Accumulationsource)
+
+Accumulation.jags.mussel <- run_model(run = "short", musselAccummix, Accumulationsource, Accumulationdiscr, musselAccummodel_filename)
+
+musselAccumoutput_options <- list(summary_save = TRUE,
+                       summary_name = paste0(outputdir, "/musselAccumsummary_statistics"),
+                       sup_post = FALSE,
+                       plot_post_save_pdf = TRUE,
+                       plot_post_name = paste0(outputdir, "/musselAccumposterior_density"),
+                       sup_pairs = FALSE,
+                       plot_pairs_save_pdf = TRUE,
+                       plot_pairs_name = paste0(outputdir, "/musselAccumpairs_plot"),
+                       sup_xy = FALSE,
+                       plot_xy_save_pdf = TRUE,
+                       plot_xy_name = paste0(outputdir, "/musselAccumxy_plot"),
+                       gelman = TRUE,
+                       heidel = FALSE,
+                       geweke = TRUE,
+                       diag_save = TRUE,
+                       diag_name = paste0(outputdir, "/musselAccumdiagnostics"),
+                       indiv_effect = FALSE,
+                       plot_post_save_png = FALSE,
+                       plot_pairs_save_png = FALSE,
+                       plot_xy_save_png = FALSE,
+                       diag_save_ggmcmc = FALSE,
+                       return_obj = TRUE)
+
+output_JAGS(Accumulation.jags.mussel, musselAccummix, Accumulationsource, musselAccumoutput_options)
+
+# cordgrass only accumulation mix -- all else stays the same
+
+cordgrassAccumMix <- AccumulationMix %>%
+  filter(AreaType == "cordgrass only") %>%
+  select(d15N, d13C, Density)
+
+write.csv(cordgrassAccumMix, file = paste0(mixdir, "/MixingDataSubsetted/cordgrassAccumMix.csv"))
+
+# Load the mixture/consumer data
+cordgrassAccummix <- load_mix_data(filename= paste0(mixdir, "/MixingDataSubsetted/cordgrassAccumMix.csv"), 
+                     iso_names=c("d13C","d15N"), 
+                     factors = NULL, 
+                     fac_random= NULL,  
+                     fac_nested= NULL, 
+                     cont_effects= "Density")
+
+# Model
+
+cordgrassAccummodel_filename <- paste0(outputdir, "/cordgrassAccumMixSIAR_model.txt")
+
+write_JAGS_model(cordgrassAccummodel_filename, resid_err, process_err, cordgrassAccummix, Accumulationsource)
+
+Accumulation.jags.cordgrass <- run_model(run = "short", cordgrassAccummix, Accumulationsource, Accumulationdiscr, cordgrassAccummodel_filename)
+
+cordgrassAccumoutput_options <- list(summary_save = TRUE,
+                       summary_name = paste0(outputdir, "/cordgrassAccumsummary_statistics"),
+                       sup_post = FALSE,
+                       plot_post_save_pdf = TRUE,
+                       plot_post_name = paste0(outputdir, "/cordgrassAccumposterior_density"),
+                       sup_pairs = FALSE,
+                       plot_pairs_save_pdf = TRUE,
+                       plot_pairs_name = paste0(outputdir, "/cordgrassAccumpairs_plot"),
+                       sup_xy = FALSE,
+                       plot_xy_save_pdf = TRUE,
+                       plot_xy_name = paste0(outputdir, "/cordgrassAccumxy_plot"),
+                       gelman = TRUE,
+                       heidel = FALSE,
+                       geweke = TRUE,
+                       diag_save = TRUE,
+                       diag_name = paste0(outputdir, "/cordgrassAccumdiagnostics"),
+                       indiv_effect = FALSE,
+                       plot_post_save_png = FALSE,
+                       plot_pairs_save_png = FALSE,
+                       plot_xy_save_png = FALSE,
+                       diag_save_ggmcmc = FALSE,
+                       return_obj = TRUE)
+
+output_JAGS(Accumulation.jags.cordgrass, cordgrassAccummix, Accumulationsource, cordgrassAccumoutput_options)
+
+```
+```{r individual results from continuous models}
+
+# results from each individual plot, by area type and source
+# calculate median proportions and 95% CIs
+# merge dataframes and use to calculate source-specific density of organic C and N biomass
+
+# mussel aggregations 
+ind.mussel.phytoplankton <- as.data.frame(Accumulation.jags.mussel[["BUGSoutput"]][["sims.list"]][["p.ind"]][,,1])
+
+names(ind.mussel.phytoplankton) <- substring(names(ind.mussel.phytoplankton), 2)
+
+ind.mussel.phytoplankton.pivot <- ind.mussel.phytoplankton %>%
+  rowid_to_column("iteration") %>%
+  pivot_longer(cols = c(2:20)) %>%
+  mutate(source = "allochthonous") %>%   
+  pivot_wider(id_cols = c("iteration", "name"),
+              names_from = source,
+              values_from = value)
+
+ind.mussel.microalgea <- as.data.frame(Accumulation.jags.mussel[["BUGSoutput"]][["sims.list"]][["p.ind"]][,,2])
+
+names(ind.mussel.microalgea) <- substring(names(ind.mussel.microalgea), 2)
+
+ind.mussel.microalgea.pivot <- ind.mussel.microalgea %>%
+  rowid_to_column("iteration") %>%
+  pivot_longer(cols = c(2:20)) %>%
+  mutate(source = "benthicmicroalgea") 
+
+ind.mussel.cordgrass <- as.data.frame(Accumulation.jags.mussel[["BUGSoutput"]][["sims.list"]][["p.ind"]][,,3])
+
+names(ind.mussel.cordgrass) <- substring(names(ind.mussel.cordgrass), 2)
+
+ind.mussel.cordgrass.pivot <- ind.mussel.cordgrass %>%
+  rowid_to_column("iteration") %>%
+  pivot_longer(cols = c(2:20)) %>%
+  mutate(source = "belowgroundcordgrass") 
+
+ind.mussel.all <- rbind(ind.mussel.microalgea.pivot, ind.mussel.cordgrass.pivot) %>%
+  pivot_wider(id_cols = c("iteration", "name"),
+              names_from = source,
+              values_from = value) %>%
+  rowwise() %>%
+  mutate(autochthonous = sum(benthicmicroalgea, belowgroundcordgrass)) %>%
+  merge(ind.mussel.phytoplankton.pivot, by = c("iteration", "name")) %>%
+  merge(musselAccumMix %>% rowid_to_column("index"), by.x = "name", by.y = "index") %>%
+  mutate(AreaType = "mussels")
+
+# cordgrass only areas
+
+ind.cordgrass.phytoplankton <- as.data.frame(Accumulation.jags.cordgrass[["BUGSoutput"]][["sims.list"]][["p.ind"]][,,1])
+
+names(ind.cordgrass.phytoplankton) <- substring(names(ind.cordgrass.phytoplankton), 2)
+
+ind.cordgrass.phytoplankton.pivot <- ind.cordgrass.phytoplankton %>%
+  rowid_to_column("iteration") %>%
+  pivot_longer(cols = c(2:20)) %>%
+  mutate(source = "allochthonous") %>%   
+  pivot_wider(id_cols = c("iteration", "name"),
+              names_from = source,
+              values_from = value)
+
+ind.cordgrass.microalgea <- as.data.frame(Accumulation.jags.cordgrass[["BUGSoutput"]][["sims.list"]][["p.ind"]][,,2])
+
+names(ind.cordgrass.microalgea) <- substring(names(ind.cordgrass.microalgea), 2)
+
+ind.cordgrass.microalgea.pivot <- ind.cordgrass.microalgea %>%
+  rowid_to_column("iteration") %>%
+  pivot_longer(cols = c(2:20)) %>%
+  mutate(source = "benthicmicroalgea") 
+
+ind.cordgrass.cordgrass <- as.data.frame(Accumulation.jags.cordgrass[["BUGSoutput"]][["sims.list"]][["p.ind"]][,,3])
+
+names(ind.cordgrass.cordgrass) <- substring(names(ind.cordgrass.cordgrass), 2)
+
+ind.cordgrass.cordgrass.pivot <- ind.cordgrass.cordgrass %>%
+  rowid_to_column("iteration") %>%
+  pivot_longer(cols = c(2:20)) %>%
+  mutate(source = "belowgroundcordgrass") 
+
+ind.cordgrass.all <- rbind(ind.cordgrass.microalgea.pivot, ind.cordgrass.cordgrass.pivot) %>%
+  pivot_wider(id_cols = c("iteration", "name"),
+              names_from = source,
+              values_from = value) %>%
+  rowwise() %>%
+  mutate(autochthonous = sum(benthicmicroalgea, belowgroundcordgrass)) %>%
+  merge(ind.cordgrass.phytoplankton.pivot, by = c("iteration", "name")) %>%
+  merge(cordgrassAccumMix %>% rowid_to_column("index"), by.x = "name", by.y = "index") %>%
+  mutate(AreaType = "cordgrass only")
+
+byplot_densityeffects <- rbind(ind.mussel.all, ind.cordgrass.all)
+```
+# MixSIAR figures
+```{r isospace plot}
+
+isospaceSources <- rbind(wcIsospace[["plot_env"]][["df_sources"]], AccumulationIsospace[["plot_env"]][["df_sources"]]) %>%
+  mutate(linetype = factor(linetype)) %>%
+  unique()
+
+isospaceMixture <- mixingdata %>% 
+  group_by(Study, SampleType, AreaType) %>%
+  summarize(meand13C = mean(d13C, na.rm = T),
+            meand15N = mean(d15N, na.rm = T),
+            sdd13C = sd(d13C, na.rm = T),
+            sdd15N = sd(d15N, na.rm = T)) %>%
+  mutate(ymin = meand15N-sdd15N,
+         ymax = meand15N+sdd15N,
+         xmin = meand13C-sdd13C,
+         xmax = meand13C+sdd13C)
+
+# surface POM data
+wcIsospace +
+  geom_point(size = 7,
+             shape = 18,
+             color = "grey40",
+             alpha = .3) +
+# sedimentation data
+  geom_point(data = sedimentationIsospace[["plot_env"]][["mix"]][["data"]],
+             aes(x = d13C, 
+                 y = d15N, 
+                 shape = AreaType),
+             color = "grey40",
+             size = 6,
+             alpha = .3) +
+# accumulation data
+    geom_point(data = AccumulationIsospace[["plot_env"]][["mix"]][["data"]],
+             aes(x = d13C, 
+                 y = d15N, 
+                 shape = AreaType),
+             color = "black",
+             size = 6,
+             alpha = .3) +
+# average mixture data
+  geom_pointrange(data = isospaceMixture,
+                  aes(x = meand13C, 
+                      y = meand15N, 
+                      ymin = ymin, 
+                      ymax = ymax,
+                      color = Study),
+                  size = 1) +
+  geom_pointrange(data = isospaceMixture,
+                  aes(x = meand13C, 
+                      y = meand15N, 
+                      xmin = xmin,
+                      xmax = xmax,
+                      color = Study),
+                  size = 1) +
+  geom_point(data = isospaceMixture, 
+             aes(x = meand13C, 
+                 y = meand15N, 
+                 shape = SampleType,
+                 color = Study),
+             size = 9) +
+  scale_shape_manual(values = c(25, 17, 25, 17, 15, 18)) +
+  scale_color_manual(values = c("black", "black", "black", "grey40", "black")) +
+  # source data
+    geom_point(data = isospaceSources, 
+             aes(x = x, 
+                 y = y, 
+                 color = linetype), 
+             size = 1) +
+  geom_pointrange(data = isospaceSources,
+                  aes(ymin = ymin, 
+                      ymax = ymax,
+                      color = linetype),
+                  size = 1) +
+  geom_pointrange(data = isospaceSources,
+                  aes(xmin = xmin,
+                      xmax = xmax,
+                      color = linetype),
+                  size = 1) +
+  theme_tufte()+
+  # guides(color = "none",
+  #        shape = "none")+
+  theme(plot.title = element_blank(),
+        axis.title = element_text(size = 30),
+        axis.text = element_text(size = 28),
+        axis.line = element_line())
+  
+```
+```{r sedimentation density plots}
+
+# original
+ggplot(data = rbind(wcpost_use, sedimentationpost_use) %>%
+    mutate(sample = factor(sample, levels = c("surface water POM",
+                                              "mussels", 
+                                              "cordgrass only"))), 
+  aes(x = x, fill = sources, linetype = sample)) +
+  geom_density(alpha = .3, size = 1.1)+
+  facet_wrap(~sources, ncol = 1, scales = "free_y") +
+  scale_linetype_manual(values = c("solid", "longdash", "dotdash")) +
+  scale_x_continuous(limits = c(0,1)) +
+  labs(x = "source proportion") +
+  theme_tufte()+
+  # guides(fill = "none",
+  #        linetype = "none") +
+  theme(plot.title = element_blank(),
+        axis.title = element_text(size = 30),
+        axis.text = element_text(size = 28),
+        strip.text = element_blank(),
+        panel.spacing.x = unit(4,"lines"),
+        panel.spacing.y = unit(2, "lines"),
+        axis.line = element_line())
+
+
+# combined
+
+ggplot(data = sedimentationCombined_use %>% mutate(sample = factor(sample, levels = c("mussels", "cordgrass only"))), 
+                                           aes(x = x, fill = sources, color = sources, linetype = sample)) +
+  geom_density(alpha = .3, size = 1.1)+
+  scale_fill_manual(values = c("#C6A571", "#8FAADC")) +
+  scale_color_manual(values = c("#C6A571", "#8FAADC")) +
+  theme_tufte()+
+  scale_linetype_manual(values = c("longdash", "dotdash")) +
+  scale_x_continuous(limits = c(0,1)) +
+  labs(x = "combined source proportion",
+       y = "density") +
+  guides(fill = "none",
+         color = "none")+
+  theme(plot.title = element_blank(),
+        axis.title = element_text(size = 30),
+        axis.text = element_text(size = 28),
+        axis.line = element_line())
+
+```
+```{r accumulation density plots}
+
+Pseudopost1_use <- read.csv("MixSIAR/PseudoMixSIARResults_ThreeEndMem_acidified.csv")
+
+DepositionThreeEndMem_dt_use <- read.csv("MixSIAR/DepositionMixSIARResults_ThreeEndMem_acidified.csv")
+
+# original
+ggplot(data = Accumulationpost_use, aes(x = x, fill = sources, linetype = sample)) +
+  geom_density(alpha = .3, size = 1.1)+
+  facet_wrap(~sources, ncol = 1, scales = "free_y") +
+  scale_linetype_manual(values = c("dotted","longdash")) +
+  scale_x_continuous(limits = c(0,1)) +
+  labs(x = "source proportion") +
+  theme_tufte()+
+  # guides(fill = "none",
+  #        linetype = "none") +
+  theme(plot.title = element_blank(),
+        axis.title = element_text(size = 30),
+        axis.text = element_text(size = 28),
+        strip.text = element_blank(),
+        panel.spacing.x = unit(4,"lines"),
+        panel.spacing.y = unit(2, "lines"),
+        axis.line = element_line())
+
+# combined
+
+ggplot(data = AccumulationCombined_use %>% aes(x = x, fill = sources, color = sources, linetype = sample)) +
+  geom_density(alpha = .3, size = 1.1)+
+  scale_fill_manual(values = c("#C6A571", "#8FAADC")) +
+  scale_color_manual(values = c("#C6A571", "#8FAADC")) +
+  scale_x_continuous(limits = c(0,1)) +
+  theme_tufte()+
+  scale_linetype_manual(values = c("longdash", "dotdash")) +
+  labs(x = "combined source proportion",
+       y = "density") +
+  guides(fill = "none",
+         color = "none")+
+  theme(plot.title = element_blank(),
+        axis.title = element_text(size = 30),
+        axis.text = element_text(size = 28),
+        axis.line = element_line())
+
+```
+
+### Modeling mussel effects on allochthonous and autochthonous organic C and N
+
+```{r set up  MixSIAR and sedimentation data}
+# prepare MixSIAR sedimentation model outputs
+# combined source proportions (allochthonous and autochthonous) are paired
+# ...create index to pivot pair proportions wider
+
+sedimentationCombined_use <- read.csv("MixSIAR/ImportMixSIARResults_Combined_ThreeEndMem_acidified.csv")
+
+sedimentationCombined_use2 <- sedimentationCombined_use %>% 
+  arrange(X) %>% 
+  mutate(index_to_merge = rep(1:(nrow(sedimentationCombined_use)/2), each = 2)) %>%
+  group_by(index_to_merge) %>%
+  pivot_wider(id_cols = c(sample, index_to_merge),
+              names_from = sources,
+              values_from = x)
+        
+
+# extrapolate g m-2 of allochthonous and autochthonous organic C and N transported 
+
+sedbiomass <- sed_geochem %>%
+  drop_na(PercWtTN) %>%
+  mutate(TOC_g = DryWeight_g * PercWtTOC/100,     
+         TN_g = DryWeight_g * PercWtTN/100) %>%
+  merge(sedimentationCombined_use2, by.x = "AreaType", by.y = "sample") %>%
+  rowwise() %>%
+  mutate(TOC_g_m2_allochthonous = (allochthonous*TOC_g)/(pi*(.045^2)),
+         TOC_g_m2_autochthonous = (autochthonous*TOC_g)/(pi*(.045^2)),
+         TN_g_m2_allochthonous = (allochthonous*TN_g)/(pi*(.045^2)),
+         TN_g_m2_autochthonous = (autochthonous*TN_g)/(pi*(.045^2))) %>%
+  pivot_longer(cols = c(TOC_g_m2_allochthonous, TOC_g_m2_autochthonous, TN_g_m2_allochthonous, TN_g_m2_autochthonous)) %>%
+  drop_na(value) %>%
+  group_by(AreaType, DryWeight_g, name) %>%
+  summarise(median = median(value),
+            sd = sd(value))
+```
+```{r sedimentation allochthonous and autochthonous organic C and N}
+sedimentation <- sedbiomass %>%
+  pivot_wider(names_from = name,
+              values_from = c(median, sd)) 
+# model formulas
+sedautC <- bf(median_TOC_g_m2_autochthonous | mi(sd_TOC_g_m2_autochthonous) ~ AreaType) + Gamma(link = "log")
+sedallC <- bf(median_TOC_g_m2_allochthonous | mi(sd_TOC_g_m2_allochthonous) ~ AreaType) + Gamma(link = "log")
+sedautN <- bf(median_TN_g_m2_autochthonous | mi(sd_TN_g_m2_autochthonous) ~ AreaType) + Gamma(link = "log")
+sedallN <- bf(median_TN_g_m2_allochthonous | mi(sd_TN_g_m2_allochthonous) ~ AreaType) + Gamma(link = "log")
+
+sed_mix_multi <- brm(
+  sedautC + sedallC + sedautN + sedallN + set_rescor(FALSE),
+  data = sedimentation,
+  chains = 4,
+  cores = 4,
+  backend = "cmdstanr",
+  refresh = 0
+)
+pp_check(sed_mix_multi, ndraws = 100, resp = "medianTOCgm2autochthonous")
+pp_check(sed_mix_multi, ndraws = 100, resp = "medianTOCgm2allochthonous")
+pp_check(sed_mix_multi, ndraws = 100, resp = "medianTNgm2autochthonous")
+pp_check(sed_mix_multi, ndraws = 100, resp = "medianTNgm2allochthonous")
+
+sed_mix_pos <- merge(summarise_draws(sed_mix_multi), 
+                         summarise_draws(sed_mix_multi, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable")  %>%
+  mutate(Study = "sedimentation",
+         Predictor = "area type (mussels)")
+
+bayesplot::mcmc_areas(sed_mix_multi, regex_pars = "AreaType", prob = 0.9)
+
+sed_mix_plot <- plot(conditional_effects(sed_mix_multi), 
+     points = TRUE, 
+     point_args = list(width = .15),
+     theme = theme_tufte(),
+     ask = FALSE)
+
+sed_mix_plot[["medianTOCgm2autochthonous.medianTOCgm2autochthonous_AreaType"]]+ 
+  ylim(0, 12) +
+  theme(axis.line = element_line())
+
+sed_mix_plot[["medianTOCgm2allochthonous.medianTOCgm2allochthonous_AreaType"]]+ 
+  ylim(0, 12) +
+  theme(axis.line = element_line())
+
+sed_mix_plot[["medianTNgm2autochthonous.medianTNgm2autochthonous_AreaType"]]+ 
+  ylim(0, 1.5) +
+  theme(axis.line = element_line())
+
+sed_mix_plot[["medianTNgm2allochthonous.medianTNgm2allochthonous_AreaType"]]+ 
+  ylim(0, 1.5) +
+  theme(axis.line = element_line())
+```
+
+```{r set up MixSIAR and accumulation data}
+# prepare MixSIAR accumulation model outputs
+# combined source proportions (allochthonous and autochthonous) are paired
+# ...create index to pivot pair proportions wider
+
+AccumulationCombined_use <- read.csv("MixSIAR/DepositionMixSIARResults_Combined_ThreeEndMem_acidified.csv")
+
+AccumulationCombined_use2 <- AccumulationCombined_use %>% 
+  arrange(X) %>% 
+  mutate(index_to_merge = rep(1:(nrow(AccumulationCombined_use)/2), each = 2)) %>%
+  group_by(index_to_merge) %>%
+  pivot_wider(id_cols = c(sample, index_to_merge),
+              names_from = sources,
+              values_from = x)
+
+# extrapolate mg cm-3 of allochthonous and autochthonous organic C and N transported 
+
+accumbiomass <- ac_geochem %>%
+  mutate(TOC_mg_cm3 = (DryBulkDensity_g_cm3 * PercWtTOC/100)*1000,     
+         TN_mg_cm3 = (DryBulkDensity_g_cm3 * PercWtTN/100)*1000) %>%
+  merge(AccumulationCombined_use2, by.x = "AreaType", by.y = "sample") %>%
+  rowwise() %>%
+  mutate(TOC_mg_cm3_allochthonous = allochthonous*TOC_mg_cm3,
+         TOC_mg_cm3_autochthonous = autochthonous*TOC_mg_cm3,
+         TN_mg_cm3_allochthonous = allochthonous*TN_mg_cm3,
+         TN_mg_cm3_autochthonous = autochthonous*TN_mg_cm3) %>%
+pivot_longer(cols = c(TOC_mg_cm3_allochthonous, TOC_mg_cm3_autochthonous, TN_mg_cm3_allochthonous, TN_mg_cm3_autochthonous)) %>%
+  drop_na(value) %>%
+  group_by(AreaType, DryBulkDensity_g_cm3, name) %>%
+  summarise(median = median(value),
+            sd = sd(value))
+```
+```{r accumulation allochthonous and autochthonous organic C and N}
+
+accumulation <- accumbiomass %>%
+  pivot_wider(names_from = name,
+              values_from = c(median, sd))
+
+# model formulas
+accumautC <- bf(median_TOC_mg_cm3_autochthonous | mi(sd_TOC_mg_cm3_autochthonous) ~ AreaType) 
+accumallC <- bf(median_TOC_mg_cm3_allochthonous | mi(sd_TOC_mg_cm3_allochthonous) ~ AreaType) + Gamma(link = "log")
+accumautN <- bf(median_TN_mg_cm3_autochthonous | mi(sd_TN_mg_cm3_autochthonous) ~ AreaType) 
+accumallN <- bf(median_TN_mg_cm3_allochthonous | mi(sd_TN_mg_cm3_allochthonous) ~ AreaType) + lognormal()
+
+accum_mix_multi <- brm(
+  accumautC + accumallC + accumautN + accumallN + set_rescor(FALSE),
+  data = accumulation,
+  chains = 4,
+  cores = 4,
+  backend = "cmdstanr",
+  refresh = 0
+)
+pp_check(accum_mix_multi, ndraws = 100, resp = "medianTOCmgcm3autochthonous")
+pp_check(accum_mix_multi, ndraws = 100, resp = "medianTOCmgcm3allochthonous")
+pp_check(accum_mix_multi, ndraws = 100, resp = "medianTNmgcm3autochthonous")
+pp_check(accum_mix_multi, ndraws = 100, resp = "medianTNmgcm3allochthonous")
+
+accum_mix_pos <- merge(summarise_draws(accum_mix_multi), 
+                         summarise_draws(accum_mix_multi, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable")  %>%
+  mutate(Study = "accumulation",
+         Predictor = "area type (mussels)")
+
+bayesplot::mcmc_areas(accum_mix_multi, regex_pars = "AreaType", prob = 0.9)
+
+accum_mix_plot <- plot(conditional_effects(accum_mix_multi), 
+     points = TRUE, 
+     point_args = list(width = .2),
+     theme = theme_tufte(),
+     ask = FALSE)
+
+accum_mix_plot[["medianTOCmgcm3autochthonous.medianTOCmgcm3autochthonous_AreaType"]]+
+  ylim(0, 10) +
+  theme(axis.line = element_line())
+
+accum_mix_plot[["medianTOCmgcm3allochthonous.medianTOCmgcm3allochthonous_AreaType"]]+
+  ylim(0, 10) +
+  theme(axis.line = element_line())
+
+accum_mix_plot[["medianTNmgcm3autochthonous.medianTNmgcm3autochthonous_AreaType"]]+
+  ylim(0, 1) +
+  theme(axis.line = element_line())
+
+accum_mix_plot[["medianTNmgcm3allochthonous.medianTNmgcm3allochthonous_AreaType"]]+
+  ylim(0, 1) +
+  theme(axis.line = element_line())
+
+```
+```{r set up mussel density effects data}
+
+accumbiomass_density <- md_ac %>%
+  rowwise() %>%
+  mutate(Density = sum(LocalMusselDensity_m2,NeighboringMusselDensity_9pim2, na.rm = T),
+         TOC_mg_cm3 = (DryBulkDensity_g_cm3 * PercWtTOC/100)*1000,     
+         TN_mg_cm3 = (DryBulkDensity_g_cm3 * PercWtTN/100)*1000) %>%
+  merge(mixingdata, by = c("AreaID", "AreaType")) %>%
+  merge(byplot_alldata, by = c("AreaType", "Density", "d15N", "d13C")) %>%
+  rowwise() %>%
+  mutate(TOC_mg_cm3_allochthonous = allochthonous*TOC_mg_cm3,
+         TOC_mg_cm3_autochthonous = autochthonous*TOC_mg_cm3,
+         TN_mg_cm3_allochthonous = allochthonous*TN_mg_cm3,
+         TN_mg_cm3_autochthonous = autochthonous*TN_mg_cm3) %>%
+  dplyr::select(c("AreaType", "Density" ,"AreaID", "TOC_mg_cm3_allochthonous", "TOC_mg_cm3_autochthonous", "TN_mg_cm3_allochthonous", "TN_mg_cm3_autochthonous"))%>%
+  pivot_longer(cols = c(TOC_mg_cm3_allochthonous, TOC_mg_cm3_autochthonous, TN_mg_cm3_allochthonous, TN_mg_cm3_autochthonous)) %>%
+  group_by(AreaType, Density, AreaID, name) %>%
+  summarise(median = median(value),
+            sd = sd(value)) %>%
+  pivot_wider(names_from = name,
+              values_from = c(median, sd))
+
+```
+```{r density effects on allochthonous and autochthonous organic C and N}
+#local
+
+accumbiomass_local <- accumbiomass_density %>%
+  filter(AreaType == "mussels")
+
+
+descdist(accumbiomass_local$median_TN_mg_cm3_allochthonous, discrete = FALSE)
+
+# model formulas
+accumautC_local <- bf(median_TOC_mg_cm3_autochthonous | mi(sd_TOC_mg_cm3_autochthonous) ~ 1 + Density) + Gamma(link = "log")
+accumallC_local <- bf(median_TOC_mg_cm3_allochthonous | mi(sd_TOC_mg_cm3_allochthonous) ~ 1 + Density) + Gamma(link = "log")
+accumautN_local <- bf(median_TN_mg_cm3_autochthonous | mi(sd_TN_mg_cm3_autochthonous) ~ 1 + Density) + Gamma(link = "log")
+accumallN_local <- bf(median_TN_mg_cm3_allochthonous | mi(sd_TN_mg_cm3_allochthonous) ~ 1 + Density) + Gamma(link = "log")
+
+accum_mix_local <- brm(
+  accumautC_local + accumallC_local + accumautN_local + accumallN_local + set_rescor(FALSE),
+  data = accumbiomass_local,
+  chains = 4,
+  cores = 4,
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(accum_mix_local, ndraws = 100, resp = "medianTOCmgcm3autochthonous")
+pp_check(accum_mix_local, ndraws = 100, resp = "medianTOCmgcm3allochthonous")
+pp_check(accum_mix_local, ndraws = 100, resp = "medianTNmgcm3autochthonous")
+pp_check(accum_mix_local, ndraws = 100, resp = "medianTNmgcm3allochthonous")
+
+accum_mixlocal_pos <- merge(summarise_draws(accum_mix_local), 
+                         summarise_draws(accum_mix_local, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable")  %>%
+  mutate(Study = "accumulation",
+         Predictor = "local mussel density")
+
+bayesplot::mcmc_areas(accum_mix_local, regex_pars = "Density", prob = 0.9)
+
+accum_mixlocal_plot <- plot(conditional_effects(accum_mix_local), 
+     points = TRUE, 
+     #point_args = list(width = .2),
+     theme = theme_tufte(),
+     ask = FALSE)
+
+
+
+accum_mixlocal_plot[["medianTOCmgcm3autochthonous.medianTOCmgcm3autochthonous_Density"]]+
+  ylim(0, 10) +
+  xlim(0, 305) +
+  theme(axis.line = element_line())
+
+accum_mixlocal_plot[["medianTOCmgcm3allochthonous.medianTOCmgcm3allochthonous_Density"]]+
+  ylim(0, 10) +
+  xlim(0, 305) +
+  theme(axis.line = element_line())
+
+accum_mixlocal_plot[["medianTNmgcm3autochthonous.medianTNmgcm3autochthonous_Density"]]+
+  ylim(0, .9) +
+  xlim(0, 305) +
+  theme(axis.line = element_line())
+
+accum_mixlocal_plot[["medianTNmgcm3allochthonous.medianTNmgcm3allochthonous_Density"]]+
+  ylim(0, .9) +
+  xlim(0, 305) +
+  theme(axis.line = element_line())
+
+
+#neigh
+
+accumbiomass_neigh <- accumbiomass_density %>%
+  filter(AreaType == "cordgrass only")
+
+
+descdist(accumbiomass_neigh$median_TN_mg_cm3_allochthonous, discrete = FALSE)
+
+# model formulas
+accumautC_neigh <- bf(median_TOC_mg_cm3_autochthonous | mi(sd_TOC_mg_cm3_autochthonous) ~ 1 + Density) + lognormal()
+accumallC_neigh <- bf(median_TOC_mg_cm3_allochthonous | mi(sd_TOC_mg_cm3_allochthonous) ~ 1 + Density) + lognormal()
+accumautN_neigh <- bf(median_TN_mg_cm3_autochthonous | mi(sd_TN_mg_cm3_autochthonous) ~ 1 + Density) + lognormal()
+accumallN_neigh <- bf(median_TN_mg_cm3_allochthonous | mi(sd_TN_mg_cm3_allochthonous) ~ 1 + Density) + lognormal()
+
+accum_mix_neigh <- brm(
+  accumautC_neigh + accumallC_neigh + accumautN_neigh + accumallN_neigh + set_rescor(FALSE),
+  data = accumbiomass_neigh,
+  chains = 4,
+  cores = 4,
+  backend = "cmdstanr",
+  refresh = 0
+)
+
+pp_check(accum_mix_neigh, ndraws = 100, resp = "medianTOCmgcm3autochthonous") 
+pp_check(accum_mix_neigh, ndraws = 100, resp = "medianTOCmgcm3allochthonous")
+pp_check(accum_mix_neigh, ndraws = 100, resp = "medianTNmgcm3autochthonous")
+pp_check(accum_mix_neigh, ndraws = 100, resp = "medianTNmgcm3allochthonous")
+
+accum_mixneigh_pos <- merge(summarise_draws(accum_mix_neigh), 
+                         summarise_draws(accum_mix_neigh, ~quantile(.x, probs = c(0.025, 0.975))), 
+                         by = "variable")  %>%
+  mutate(Study = "accumulation",
+         Predictor = "neighboring mussel density")
+
+bayesplot::mcmc_areas(accum_mix_neigh, regex_pars = "Density", prob = 0.9)
+
+accum_mixneigh_plot <- plot(conditional_effects(accum_mix_neigh), 
+     points = TRUE, 
+     #point_args = list(width = .2),
+     theme = theme_tufte(),
+     ask = FALSE)
+
+bayes_R2(accum_mix_neigh)
+
+accum_mixneigh_plot[["medianTOCmgcm3autochthonous.medianTOCmgcm3autochthonous_Density"]]+
+  ylim(0, 10) +
+  xlim(0, 700) +
+  theme(axis.line = element_line())
+
+accum_mixneigh_plot[["medianTOCmgcm3allochthonous.medianTOCmgcm3allochthonous_Density"]]+
+  ylim(0, 10) +
+  xlim(0, 700) +
+  theme(axis.line = element_line())
+
+accum_mixneigh_plot[["medianTNmgcm3autochthonous.medianTNmgcm3autochthonous_Density"]]+
+  ylim(0, .9) +
+  xlim(0, 700) +
+  theme(axis.line = element_line())
+
+accum_mixneigh_plot[["medianTNmgcm3allochthonous.medianTNmgcm3allochthonous_Density"]]+
+  ylim(0, .9) +
+  xlim(0, 700) +
+  theme(axis.line = element_line())
+
+```
+
+```{r supplemental table summarizing extrapolated C and N multivariate models (Table S5)}
+
+removestr <- c("Intercept", "lp", "prior", "shape", "sigma")
+carbon <- c("TOC", "Corg")
+nitrogen <- c("TN", "Norg")
+
+# bulk geochemistry
+ExtrapolatedFT <- list(sed_mix_pos, 
+                       accum_mix_pos, accum_mixlocal_pos, accum_mixneigh_pos, 
+                       agb_pos, agb_local_pos, agb_neigh_pos)  %>%
+  bind_rows() %>%
+  mutate(median = round(median, digits = 4),
+         remove = ifelse(str_detect(variable, paste(removestr, collapse = "|"))==TRUE, NA, "Don't")) %>%
+  drop_na(remove) %>%
+  rename('Median Estimate' = "median",
+         lower = "q5",
+         upper = "q95") %>%
+  mutate(lower = round(lower, digits = 4),
+         upper = round(upper, digits = 4),
+         '90% CI' = paste("(", lower, ",", " ", upper, ")", sep = ""),
+         'OM Source' = ifelse(str_detect(variable, "allochthonous") == TRUE, "allochthonous",
+                         ifelse(str_detect(variable, "autochthonous") == TRUE, "autochthonous", NA)),
+         Element = ifelse(str_detect(variable, paste(carbon, collapse = "|"))==TRUE, "C",
+                          ifelse(str_detect(variable, paste(nitrogen, collapse = "|"))==TRUE, "N", NA)),
+         Extrapolation = ifelse(str_detect(variable, "gm2") == TRUE, "(g m-2)",
+                                ifelse(str_detect(variable, "mgcm3") == TRUE, "(mg cm-3)", NA)),
+         Response = paste(Element, Extrapolation)) %>%
+  arrange(factor(Study, levels = c("sedimentation", "accumulation", "storage")), 
+          Predictor, 
+          factor('OM Source', levels = c("allochthonous", "autochthonous"))) %>%
+  dplyr::select(c(Study, Predictor, 'OM Source', Response, 'Median Estimate', '90% CI')) %>%
+  flextable() %>%
+  merge_v(j = c('Study', 'Predictor', 'Response')) %>%
+  align(align = "left", part = "all") %>%
+  valign(valign = "top") %>%
+  width(j = c('Predictor', 'Median Estimate', '90% CI'), width = 4, unit = "cm") %>%
+  width(j = 'Response', width = 5, unit = "cm") %>%
+  border_inner_h()
+
+save_as_pptx(ExtrapolatedFT, path = "Figures/Revision/TableS5.pptx")
+
+```
