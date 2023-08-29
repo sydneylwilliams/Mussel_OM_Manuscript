@@ -57,7 +57,7 @@ outputdir <- here::here("Mussel_OM_Manuscript-main/MixSIAR_Programming/OutputFil
 ```{r sedimentation bulk geochem models}
 
 # read in sedimentation geochemistry data
-sed_geochem <- read.csv(paste0(dir, "/", fls[9]))
+sed_geochem <- read.csv(paste0(dir, "/", fls[10]))
 
 # formulas for multivariate response
 ##### mi() ensures data will be included in models if the some variables are missing data
@@ -281,7 +281,7 @@ ac_neigh_plot[["DryBulkDensitygcm3.DryBulkDensitygcm3_NeighboringMusselDensity_9
 ```
 # Storage Study
 ```{r storage biomass models}
-cores <- read.csv(paste0(dir, "/", fls[10]))
+cores <- read.csv(paste0(dir, "/", fls[11]))
 
 coreAGB <- bf(AbovegroundBiomass_dry_g ~ AreaType) + Gamma(link = "log")
 coreBGB <- bf(BelowgroundBiomass_dry_g ~ AreaType) + Gamma(link = "log")
@@ -423,7 +423,7 @@ md_core_neigh_plot[["BelowgroundBiomassdryg.BelowgroundBiomassdryg_NeighboringMu
 
 ```
 ```{r storage bulk geochemistry models}
-leaf_geochem <- read.csv(paste0(dir, "/", fls[11]))
+leaf_geochem <- read.csv(paste0(dir, "/", fls[12]))
 
 # formulas for multivariate 
 leafN <- bf(PercWtTN ~ AreaType) 
@@ -840,8 +840,6 @@ wcpost_use <- WCpost[["global"]][["data"]] %>%
   mutate(sample = "surface water POM") %>%
   mutate(sources = factor(sources, levels = c("1", "2", "3"), labels = c("aboveground S. alterniflora detritus", "marine-derived POM", "benthic microalgea")))
 
-############ write.csv(WCpost1, file = "MixSIAR/WaterColumnMixSIARResults_ThreeEndMem_acidified.csv")
-
 # Combine into allochthonous and autochthonous
 
 wcCombined <- combine_sources(wc.jags.1, wcmix, wcsource,
@@ -858,8 +856,6 @@ wcCombined_use <- as.data.table(wcCombined[["post"]]) %>%
   select(c("sources", "proportion", "sample")) %>%
   rename("x" = 2)
 
-
-########### write.csv(wcCombined_dt, file = "MixSIAR/WaterColumnMixSIARResults_Combined_ThreeEndMem_acidified.csv")
 ```
 # Sedimentation Study -- Sedimentation Samples
 ```{r sedimentation samples}
@@ -963,8 +959,6 @@ sedimentationPostMussels <- sedimentationpost[["fac1"]][[2]][["data"]] %>%
 sedimentationpost_use <- rbind(sedimentationPostCordgrass, sedimentationPostMussels) %>%
   mutate(sources = factor(sources, levels = c("1", "2", "3"), labels = c("aboveground S. alterniflora detritus", "marine-derived POM", "benthic microalgea")))
 
-################write.csv(sedimentationThreeEndMem_dt, file = "MixSIAR/sedimentationMixSIARResults_ThreeEndMem_acidified.csv")
-
 # combine into allochthonous and autochthonous groups
 sedimentationCombined <- combine_sources(sedimentation.jags.1, sedimentationmix, sedimentationsource,
                               groups = list(autochthonous = c("1", "3"),
@@ -981,8 +975,6 @@ sedimentationCombined_use <- as.data.table(sedimentationCombined[["post"]]) %>%
          sources = ifelse(combo == "p.fac1[1,1]" | combo == "p.fac1[2,1]", "autochthonous", "allochthonous")) %>%
   select(c("sources", "proportion", "sample")) %>%
   rename("x" = 2)
-
-##################write.csv(sedimentationCombined_dt, file = "MixSIAR/sedimentationMixSIARResults_Combined_ThreeEndMem_acidified.csv")
 ```
 # Accumulation Study
 ```{r accumulation samples}
@@ -1097,8 +1089,6 @@ AccumPostCordgrass <- Accumulationpost[["fac1"]][[1]][["data"]] %>%
 Accumulationpost_use <- rbind(DepPostCordgrass, DepPostMussels) %>%
   mutate(sources = factor(sources, levels = c("1", "2", "3"), labels = c("S. alterniflora detritus", "marine-derived POM", "benthic microalgea")))
 
-#############write.csv(AccumulationThreeEndMem_dt, file = "MixSIAR/AccumulationMixSIARResults_ThreeEndMem_acidified.csv")
-
 # combine into allochthonous and autochthonous groups
 AccumulationCombined <- combine_sources(Accumulation.jags.1, Accumulationmix, Accumulationsource,
                               groups = list(autochthonous = c("1", "3"),
@@ -1115,9 +1105,6 @@ AccumulationCombined_use <- as.data.table(AccumulationCombined[["post"]]) %>%
          sources = ifelse(combo == "p.fac1[1,1]" | combo == "p.fac1[2,1]", "autochthonous", "allochthonous")) %>%
   select(c("sources", "proportion", "sample")) %>%
   rename("x" = 2)
-
-################write.csv(AccumulationCombined_dt, file = "MixSIAR/AccumulationMixSIARResults_Combined_ThreeEndMem_acidified.csv")
-
 
 ```
 ```{r accumulation JAGS models separated by area type to extract slope coefficients of continuous effects}
@@ -1447,10 +1434,6 @@ ggplot(data = sedimentationCombined_use %>% mutate(sample = factor(sample, level
 ```
 ```{r accumulation density plots}
 
-Pseudopost1_use <- read.csv("MixSIAR/PseudoMixSIARResults_ThreeEndMem_acidified.csv")
-
-DepositionThreeEndMem_dt_use <- read.csv("MixSIAR/DepositionMixSIARResults_ThreeEndMem_acidified.csv")
-
 # original
 ggplot(data = Accumulationpost_use, aes(x = x, fill = sources, linetype = sample)) +
   geom_density(alpha = .3, size = 1.1)+
@@ -1495,8 +1478,6 @@ ggplot(data = AccumulationCombined_use %>% aes(x = x, fill = sources, color = so
 # prepare MixSIAR sedimentation model outputs
 # combined source proportions (allochthonous and autochthonous) are paired
 # ...create index to pivot pair proportions wider
-
-sedimentationCombined_use <- read.csv("MixSIAR/ImportMixSIARResults_Combined_ThreeEndMem_acidified.csv")
 
 sedimentationCombined_use2 <- sedimentationCombined_use %>% 
   arrange(X) %>% 
@@ -1583,8 +1564,6 @@ sed_mix_plot[["medianTNgm2allochthonous.medianTNgm2allochthonous_AreaType"]]+
 # prepare MixSIAR accumulation model outputs
 # combined source proportions (allochthonous and autochthonous) are paired
 # ...create index to pivot pair proportions wider
-
-AccumulationCombined_use <- read.csv("MixSIAR/DepositionMixSIARResults_Combined_ThreeEndMem_acidified.csv")
 
 AccumulationCombined_use2 <- AccumulationCombined_use %>% 
   arrange(X) %>% 
